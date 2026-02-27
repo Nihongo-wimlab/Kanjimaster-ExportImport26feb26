@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -57,7 +58,7 @@
     .notif  { border-radius: 16px; padding: 13px 18px; margin-bottom: 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; font-weight: 700; }
     .notif-ok  { background: #f0fdf4; border: 1.5px solid #86efac; color: #166534; }
     .notif-err { background: #fef2f2; border: 1.5px solid #fca5a5; color: #991b1b; }
-    label.addbtn { text-decoration: none; }
+    .shfl-active { background: #f59e0b !important; }
     @media (max-width: 600px) { .mgrid { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -101,6 +102,18 @@ const DATA = [
 
 const EMPTY = { id:"", kanji:"", meaning:"", readings:"", type:"on", combination:"", combReading:"", combMeaning:"", sentence:"", romaji:"", translation:"" };
 
+// Seeded shuffle — same seed = same order
+function seededShuffle(arr, seed) {
+  const a = [...arr];
+  let s = seed;
+  for (let i = a.length - 1; i > 0; i--) {
+    s = (s * 1664525 + 1013904223) & 0xffffffff;
+    const j = Math.abs(s) % (i + 1);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 function App() {
   const [db, setDb] = useState(() => {
     try {
@@ -121,6 +134,7 @@ function App() {
   const [editing, setEditing]           = useState(false);
   const [cur, setCur]                   = useState(EMPTY);
   const [importResult, setImportResult] = useState(null);
+  const [shuffleSeed, setShuffleSeed]   = useState(null); // null = geen shuffle
 
   const filtered = useMemo(() => {
     let list = filter === "all" ? db : db.filter(i => i.type === filter);
@@ -128,8 +142,11 @@ function App() {
       const s = search.toLowerCase();
       list = list.filter(i => Object.values(i).some(v => v && v.toString().toLowerCase().includes(s)));
     }
+    if (shuffleSeed !== null) {
+      list = seededShuffle(list, shuffleSeed);
+    }
     return list.slice(0, limit);
-  }, [db, search, filter, limit]);
+  }, [db, search, filter, limit, shuffleSeed]);
 
   const getExtra      = (list) => list.filter(i => !DATA.find(d => d.id === i.id));
   const saveToStorage = (list) => {
@@ -149,7 +166,11 @@ function App() {
     setModal(false);
   };
 
-  // ── EXPORT ──────────────────────────────────────────────
+  const handleShuffle = () => {
+    setShuffleSeed(Date.now());
+    setFlipped([]);
+  };
+
   const handleExport = () => {
     const json = JSON.stringify(db, null, 2);
     const blob = new Blob([json], { type: "application/json" });
@@ -161,7 +182,6 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
-  // ── IMPORT ──────────────────────────────────────────────
   const handleImport = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -170,14 +190,11 @@ function App() {
       try {
         const imported = JSON.parse(ev.target.result);
         if (!Array.isArray(imported)) throw new Error("Geen array");
-
         let added = 0, skipped = 0;
-
         setDb(prev => {
           const existingIds   = new Set(prev.map(i => i.id));
           const existingCombo = new Set(prev.map(i => i.kanji + "|" + i.type + "|" + i.combination));
           const nieuweItems   = [];
-
           imported.forEach(item => {
             const key = item.kanji + "|" + item.type + "|" + item.combination;
             if (existingIds.has(item.id) || existingCombo.has(key)) {
@@ -187,12 +204,10 @@ function App() {
               added++;
             }
           });
-
           const next = [...nieuweItems, ...prev];
           saveToStorage(next);
           return next;
         });
-
         setTimeout(() => setImportResult({ added, skipped }), 50);
         setTimeout(() => setImportResult(null), 6000);
       } catch(err) {
@@ -230,6 +245,20 @@ function App() {
             <div className="row" style={{gap:8}}>
               <span className="badge" style={{background:"#fef9c3",color:"#92400e"}}>On: {onCnt}</span>
               <span className="badge" style={{background:"#fee2e2",color:"#991b1b"}}>Kun: {kunCnt}</span>
+
+              {/* SHUFFLE */}
+              <button className={"addbtn" + (shuffleSeed !== null ? " shfl-active" : "")}
+                style={{background: shuffleSeed !== null ? "#f59e0b" : "#64748b"}}
+                onClick={handleShuffle}
+                title="Schud de kanji door elkaar">
+                <svg width="15" height="15" fill="none" stroke="white" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                  <polyline points="16 3 21 3 21 8"/>
+                  <line x1="4" y1="20" x2="21" y2="3"/>
+                  <polyline points="21 16 21 21 16 21"/>
+                  <line x1="15" y1="15" x2="21" y2="21"/>
+                </svg>
+                Shuffle
+              </button>
 
               {/* IMPORTEER */}
               <label className="addbtn" style={{background:"#7c3aed", cursor:"pointer"}}>
